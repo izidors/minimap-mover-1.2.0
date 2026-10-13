@@ -1,91 +1,139 @@
 # Promise Minimap Mover
 
-A lightweight, unofficial **World of Tanks** client modification that lets you reposition the in-battle minimap with a keyboard-and-mouse shortcut. The mod remembers the minimap's position and size between battles.
-
-**Version in the supplied source:** `1.1.2`
+**Version 1.2.1** — an unofficial World of Tanks client mod that lets you move the in-battle minimap and remember its position **and size** between battles.
 
 ## Features
 
-- Drag the minimap to a preferred position during battle.
-- Keep ordinary **Ctrl + click** minimap actions available, including pings.
-- Save the minimap offset and size to a local configuration file.
-- Restore the saved position when the minimap is initialized in a new battle.
-- Limit movement so that part of the minimap remains on screen.
-- Refresh the minimap display after moving it and restore its selected size.
+- Reposition the minimap during battle using **Ctrl + Shift + left-click and drag**.
+- Preserve normal **Ctrl + click** minimap actions, such as pings.
+- Remember the minimap position between battles and game restarts.
+- Remember the minimap size selected with the game's normal **+ / -** controls.
+- Enable or disable the mod using a checkbox in **Aslain's Mod Menu**.
+- Keep the minimap partially visible when moving it toward the screen edge.
+- Save settings locally; no manual configuration is needed for normal use.
 
 ## Controls
 
 | Action | Control |
 | --- | --- |
-| Normal minimap action (such as ping) | **Ctrl + click** on the minimap |
-| Move the minimap | Hold **Ctrl + Shift**, then **left-click and drag** |
+| Move minimap | Hold **Ctrl + Shift**, then **left-click and drag** |
+| Normal minimap action (e.g., ping) | **Ctrl + click** |
+| Increase/decrease minimap size | Game's standard **+ / -** keys |
+| Enable/disable mod | **Mod Menu → Promise Minimap Mover → Enable Minimap Mover** |
 
-Movement begins after a **5-pixel drag threshold** to distinguish a click from a drag. Release the mouse button to finish moving and save the position.
+Dragging begins after approximately **5 pixels** of movement to distinguish a click from a drag. Release the left mouse button to save the new position.
 
-**Note:** The current implementation uses Ctrl + Shift as the drag modifier and does not perform a minimap hit-test before beginning a drag. Avoid dragging elsewhere on screen while holding this shortcut.
+**Note:** The drag shortcut does not perform a minimap hit-test before beginning a drag. Avoid using Ctrl + Shift + drag elsewhere on the screen.
+
+## Dependencies and compatibility
+
+| Component | Requirement | Purpose |
+| --- | --- | --- |
+| **World of Tanks (PC)** | **Required** | Runs the client mod; install a `.wotmod` built for your game version. |
+| **Aslain’s Mod Menu** | **Optional for minimap movement; required for the in-game checkbox** | Provides the settings-menu API (`gui.aslainMenu.g_modsSettingsApi`) used by v1.2.1. |
+| **Python 2.7** | **Build-time only** | Used to compile/package the Python mod; not a separate end-user installation requirement. |
+| **ProMod / OldSkool ProMod** | **Not required** | Appreciated community project, but not a dependency of Promise Minimap Mover. |
+
+The mod's minimap controls and saved position/size work independently of Aslain’s Mod Menu. Without a compatible menu, the enable/disable checkbox will not be available in the game UI. CHAMPi’s settings GUI and Izeberg’s ModsSettingsAPI are **not** substitutes for the Aslain menu integration in this release.
 
 ## Installation
 
-1. Obtain a `.wotmod` package built for your World of Tanks client version.
-2. Copy the package into the game's matching mod-version directory:
+1. Build or obtain the **Promise Minimap Mover 1.2.1** `.wotmod` package for your installed World of Tanks client version.
+2. Place the package in the corresponding game mod folder:
 
    ```text
    World_of_Tanks/mods/<game-version>/
    ```
 
-3. Start World of Tanks and enter a battle.
-4. Hold **Ctrl + Shift** and drag with the left mouse button to position the minimap.
+3. Remove older Promise Minimap Mover `.wotmod` packages from the same game-version folder to avoid loading multiple versions.
+4. Start World of Tanks and enter a battle.
 
-The source supplied here does not establish which specific World of Tanks client builds have been tested. Check compatibility before installing a release.
+### Settings-menu integration (Aslain Mod Menu)
+
+To use the in-game enable/disable checkbox, install a compatible **Aslain Mod Menu** providing `gui.aslainMenu.g_modsSettingsApi`.
+
+Open **Mod Menu** from the game's **Open settings** menu, then find **Promise Minimap Mover → Enable Minimap Mover**. The setting is saved and restored on restart. For a complete layout change after toggling, enter a new battle.
+
+The movement functionality and the settings-menu integration are separate: the mod may load even when the optional menu API is unavailable, but its checkbox will not appear there.
 
 ## Configuration
 
-The mod automatically creates a configuration file under the World of Tanks preferences directory:
+The mod stores its settings in the World of Tanks preferences directory, under:
 
 ```text
-<preferences>/mods/promise/minimap_mover.cfg
+<preferences>/mods/promise/
 ```
 
-It stores three space-separated values:
+**Position and size:** `minimap_mover.cfg`
 
 ```text
 offset_x offset_y size_index
 ```
 
-- `offset_x`: horizontal offset from the minimap's original layout position.
-- `offset_y`: vertical offset from the minimap's original layout position.
-- `size_index`: saved minimap size index (`0` through `5`).
+- `offset_x` — horizontal offset from the minimap's original position.
+- `offset_y` — vertical offset from the minimap's original position.
+- `size_index` — minimap size index (normally `0` through `5`).
 
-The configuration is written when a drag finishes. If no valid saved position exists, the mod uses the default position. To reset the saved placement, close the game and remove `minimap_mover.cfg`.
+The mod saves the position when a drag finishes and updates the saved size when it detects a user-initiated resize.
+
+**Enabled state:** `minimap_mover_enabled.json`
+
+```json
+{"enabled": true}
+```
+
+This file stores the enable/disable setting independently from the minimap's position and size.
+
+To reset the saved placement, **close the game** and delete `minimap_mover.cfg`. To reset the enable/disable preference, delete `minimap_mover_enabled.json` while the game is closed.
 
 ## Building from source
 
-The project layout includes `src/` and `build.py`. Build requirements and command-line options depend on the actual `build.py` implementation, which was not included in the supplied source excerpt.
+The repository uses `build.py` to package the Python client mod into a `.wotmod` file. The World of Tanks client uses **Python 2.7**, so use the Python 2.7 interpreter expected by the project's build script.
 
-Inspect the build script before compiling:
+To inspect available build options:
 
 ```powershell
 python .\build.py --help
 ```
 
-The mod source uses Python 2-era APIs (including `long`) and World of Tanks client modules such as `BigWorld`, `Keys`, and `MinimapComponent`; it is not a standalone Python application.
-
-## How it works
-
-The mod hooks the minimap component's battle lifecycle, records its original position, and applies a saved offset. While the movement shortcut is active, it polls the mouse position and updates the minimap display. When dragging ends, it saves the offset and refreshes the minimap size. It also unregisters its input handlers and cancels active callbacks during cleanup.
+Build with the game version matching your installed client. The source imports World of Tanks client APIs and cannot be run as a standalone desktop Python program.
 
 ## Troubleshooting
 
-**Position is not remembered:** Check whether the game can write to `<preferences>/mods/promise/minimap_mover.cfg`.
+**The checkbox does not appear:** Confirm that Aslain Mod Menu is installed and working. This release registers its checkbox with **Aslain's menu**, not CHAMPi's settings window. Check `game.log` for `Aslain Mod Menu registered`.
 
-**Minimap size or display looks wrong:** Try leaving and re-entering a battle. The mod includes a display refresh that temporarily changes and then restores the selected minimap size.
+**The mod does not move the minimap:** Confirm the checkbox is enabled, enter a new battle, and try **Ctrl + Shift + left-click and drag**.
 
-**Mod does not load:** Verify that the `.wotmod` was built for the installed World of Tanks version and check the game's logs for `MinimapMover` messages.
+**Position or size is not remembered:** Confirm the game can write to `<preferences>/mods/promise/minimap_mover.cfg`. Change size using the normal `+ / -` controls, then check again in a new battle.
+
+**Disabling the mod does not immediately restore the current battle layout:** The full change takes effect when a new battle starts.
+
+**The mod fails to load:** Check that the `.wotmod` matches the installed game version, that no older copy is installed alongside it, and that `game.log` contains `[MinimapMover 1.2.1] Loaded` or relevant error messages.
+
+## Release notes
+
+### 1.2.1
+
+- Added a working **Enable Minimap Mover** checkbox to **Aslain's Mod Menu**.
+- Kept the enable/disable preference in a separate JSON configuration file.
+- Preserved the existing minimap movement and position/size persistence behavior.
+
+### 1.1.9
+
+- Fixed minimap size persistence by tracking user-initiated size changes through the game's minimap component.
+
+## Acknowledgements
+
+Special thanks to **Aslain** for the excellent work on **Aslain’s Modpack and Mod Menu**, which makes managing World of Tanks mods easier and provides the settings integration used by Promise Minimap Mover.
+
+We also appreciate the **OldSkool ProMod (ProMod) team** and their great work for the World of Tanks modding community. Thank you for the time, care, and ongoing effort you put into your projects.
+
+These acknowledgements are expressions of appreciation, not claims of sponsorship, endorsement, or a technical dependency on ProMod.
 
 ## Disclaimer
 
-This is an independent, unofficial community modification for **World of Tanks**. It is not affiliated with or endorsed by Wargaming. Compatibility and permitted use are subject to the current game client and applicable game/mod policies.
+Promise Minimap Mover is an independent, unofficial community modification for **World of Tanks** and is not affiliated with or endorsed by Wargaming. Compatibility and permitted use depend on the game version and applicable mod policies.
 
 ## License
 
-No license has been specified in the supplied source. Add a `LICENSE` file if you intend to grant others permission to reuse, modify, or redistribute the code.
+No license is specified in the supplied project documentation. Add a `LICENSE` file before granting others explicit permission to reuse, modify, or redistribute the source.

@@ -33,11 +33,18 @@ from gui.Scaleform.daapi.view.battle.shared.minimap.component import (
 # Mod information
 # ===========================================================================
 
-__version__ = '1.1.9'
+__version__ = '1.2.1'
 MOD_VERSION = __version__
 MOD_NAME = 'MinimapMover'
 
 _LOGGER = logging.getLogger('Promise.MinimapMover')
+
+# Optional ModsSettingsAPI integration. Position/size remain in the original cfg.
+MSA_LINKAGE = 'promiseMinimapMover'
+_MSA_REGISTERED = False
+_MSA_RETRY = None
+_enabled = True
+
 
 
 def log(message):
@@ -96,6 +103,97 @@ _last_user_resize_key_time = -1000.0
 # ===========================================================================
 # Configuration
 # ===========================================================================
+
+def _enabled_path():
+    folder = _get_config_directory()
+    return os.path.join(folder, 'minimap_mover_enabled.json') if folder else None
+
+
+def load_enabled():
+    global _enabled
+    path = _enabled_path()
+    if not path or not os.path.isfile(path):
+        return
+    try:
+        import json
+        with open(path, 'r') as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            _enabled = bool(data.get('enabled', True))
+    except Exception:
+        _LOGGER.exception('Unable to load enabled setting')
+
+
+def save_enabled():
+    path = _enabled_path()
+    if not path:
+        return
+    try:
+        import json
+        folder = os.path.dirname(path)
+        if not os.path.isdir(folder):
+            os.makedirs(folder)
+        with open(path, 'w') as fh:
+            json.dump({'enabled': _enabled}, fh)
+    except Exception:
+        _LOGGER.exception('Unable to save enabled setting')
+
+
+def _on_msa_changed(*args):
+    global _enabled
+    # ModsSettingsAPI implementations may call (linkage, settings) or (settings).
+    settings = None
+    if len(args) >= 2 and isinstance(args[1], dict):
+        if args[0] != MSA_LINKAGE:
+            return
+        settings = args[1]
+    elif len(args) >= 1 and isinstance(args[0], dict):
+        settings = args[0]
+    if settings is None or 'enabled' not in settings:
+        return
+    new_value = bool(settings['enabled'])
+    if new_value == _enabled:
+        return
+    _enabled = new_value
+    save_enabled()
+    if not _enabled:
+        cancel_poll()
+        cancel_size_watch()
+        cancel_refresh()
+        cancel_apply_callbacks()
+        reset_drag_state()
+    log('Settings enabled=%s (full layout change on next battle)' % _enabled)
+
+
+def register_mods_settings():
+    global _MSA_REGISTERED
+    if _MSA_REGISTERED:
+        return True
+    # Prefer the Aslain menu actually installed in this game client.
+    try:
+        from gui.aslainMenu import g_modsSettingsApi, templates
+        template = {
+            'modDisplayName': 'Promise Minimap Mover',
+            'column1': [templates.createCheckbox('Enable Minimap Mover', 'enabled', bool(_enabled))],
+            'column2': []
+        }
+        g_modsSettingsApi.setModTemplate(MSA_LINKAGE, template, _on_msa_changed)
+        _MSA_REGISTERED = True
+        log('Aslain Mod Menu registered')
+        return True
+    except Exception:
+        _LOGGER.debug('Aslain Mod Menu registration unavailable', exc_info=True)
+    return False
+
+
+def retry_msa_registration():
+    global _MSA_RETRY
+    _MSA_RETRY = None
+    if not _installed:
+        return
+    if not register_mods_settings():
+        _MSA_RETRY = BigWorld.callback(2.0, retry_msa_registration)
+
 
 def _get_config_directory():
     try:
@@ -484,6 +582,8 @@ _size_hook_wrappers = {}
 
 
 def record_user_minimap_size(index):
+    if not _enabled:
+        return
     global _battle_size
     _battle_size = int(index)
     save_offset()
@@ -509,7 +609,7 @@ def install_size_diagnostic_hook():
         def make_wrapper(method_name, method):
             def wrapper(self, *args, **kwargs):
                 result = method(self, *args, **kwargs)
-                if (method_name == 'as_setSizeS' and self is _minimap and
+                if (_enabled and method_name == 'as_setSizeS' and self is _minimap and
                         not _internal_size_call and _size_watch_ready and args):
                     try:
                         now = BigWorld.time()
@@ -906,6 +1006,8 @@ def poll_mouse():
 
 def on_key_event(event):
     global _last_user_resize_key_time
+    if not _enabled:
+        return False
     try:
         key = event.key
         if _minimap is not None and key in (
@@ -954,6 +1056,8 @@ def teardown_battle():
 def _populate_wrapper(self):
     teardown_battle()
     _original_populate(self)
+    if not _enabled:
+        return
     try:
         global _minimap, _base_x, _base_y, _base_locked, _battle_size
         _minimap = self
@@ -991,6 +1095,7 @@ def init():
     if _installed:
         return
     try:
+        load_enabled()
         _original_populate = MinimapComponent._populate
         MinimapComponent._populate = _populate_wrapper
 
@@ -1002,16 +1107,23 @@ def init():
         InputHandler.g_instance.onKeyUp += on_key_event
 
         _installed = True
-        log('Loaded')
+        retry_msa_registration()
+        log('Loaded; enabled=%s' % _enabled)
     except Exception:
         _LOGGER.exception('Unable to install MinimapMover')
 
 
 def fini():
-    global _installed, _original_populate, _original_dispose
+    global _installed, _original_populate, _original_dispose, _MSA_RETRY
     if not _installed:
         return
 
+    if _MSA_RETRY is not None:
+        try:
+            BigWorld.cancelCallback(_MSA_RETRY)
+        except Exception:
+            pass
+        _MSA_RETRY = None
     teardown_battle()
     remove_size_diagnostic_hook()
 
